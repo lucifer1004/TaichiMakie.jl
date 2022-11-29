@@ -1,0 +1,13 @@
+name = "TaichiMakie"
+uuid = "ac10ea4f-1a80-45d6-8bcc-bc184aba5ec0"
+authors = ["Gabriel Wu <wuzihua@pku.edu.cn> and contributors"]
+version = "0.1.0"
+
+[compat]
+julia = "1.8"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
