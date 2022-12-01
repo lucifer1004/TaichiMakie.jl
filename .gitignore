@@ -1,4 +1,9 @@
 *.jl.*.cov
 *.jl.cov
 *.jl.mem
+/*.jl
+/*.png
+/imgui.ini
 /docs/build/
+.CondaPkg
+Manifest.toml
