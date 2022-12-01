@@ -1,7 +1,6 @@
 function draw_atomic(scene::Scene, screen::Screen,
                      @nospecialize(primitive::Union{Lines, LineSegments}))
     @get_attribute(primitive, (color, linewidth, linestyle))
-    linewidth /= minimum(size(screen))
     linestyle = Makie.convert_attribute(linestyle, Makie.key"linestyle"())
     model = primitive[:model][]
     positions = primitive[1][]
@@ -19,6 +18,7 @@ function draw_atomic(scene::Scene, screen::Screen,
     task = nothing
 
     if !isempty(screen.tasks) && screen.tasks[end].type == LineTask &&
+       screen.tasks[end].scene == scene &&
        screen.tasks[end].linewidth ≈ linewidth
         task = screen.tasks[end]
         offset = length(task.vertices)
@@ -33,10 +33,15 @@ function draw_atomic(scene::Scene, screen::Screen,
         indices = [Int32.((i - 1 + offset, i + offset, 0)) for i in 1:(n - 1)]
     end
 
-    w, h = size(screen)
-    vertices = [Float32.((projected_positions[i][1] / w,
-                          projected_positions[i][2] / h, 0))
-                for i in 1:n]
+    vertices = map(1:n) do i
+        Float32.((screen.translate[1, 1] * projected_positions[i][1] +
+                  screen.translate[1, 2] * projected_positions[i][2] +
+                  screen.translate[1, 3],
+                  screen.translate[2, 1] * projected_positions[i][1] +
+                  screen.translate[2, 2] * projected_positions[i][2] +
+                  screen.translate[2, 3],
+                  0.0))
+    end
 
     if color isa AbstractArray
         colors = [Float32.((1 - (1 - red(color[i])) * alpha(color[i]),
@@ -53,15 +58,15 @@ function draw_atomic(scene::Scene, screen::Screen,
         append!(task.vertices, vertices)
         append!(task.colors, colors)
     else
-        task = GGUITask(LineTask, vertices, linewidth, 0.0, indices, colors)
+        task = GGUITask(scene, LineTask, vertices, linewidth, 0.0, indices, colors)
         push!(screen.tasks, task)
     end
 end
 
 function draw_atomic(scene::Scene, screen::Screen, @nospecialize(primitive::Scatter))
-    fields = @get_attribute(primitive,
-                            (color, markersize, strokecolor, strokewidth, marker,
-                             marker_offset, rotations))
+    @get_attribute(primitive,
+                   (color, markersize, strokecolor, strokewidth, marker,
+                    marker_offset, rotations))
     @get_attribute(primitive, (transform_marker,))
 
     model = primitive[:model][]
@@ -115,32 +120,42 @@ function draw_atomic_scatter(scene, screen, transfunc, colors, markersize, strok
         isnan(pos) && return
 
         marker_converted = Makie.to_spritemarker(m)
-        draw_marker(screen, marker_converted, pos, scale, strokecolor, strokewidth,
+        draw_marker(scene, screen, marker_converted, pos, scale, col, strokecolor,
+                    strokewidth,
                     offset, rotation)
     end
     return
 end
 
-function draw_marker(screen, shape, pos, scale, strokecolor, strokewidth,
+function draw_marker(scene, screen, shape, pos, scale, color, strokecolor, strokewidth,
                      marker_offset, rotation)
     marker_offset = marker_offset + scale ./ 2
     pos += Point2f(marker_offset[1], -marker_offset[2])
-    w, h = size(screen)
-    vertices = [Float32.((pos[1] / w, pos[2] / h, 0))]
+    vertices = [
+        Float32.((screen.translate[1, 1] * pos[1] +
+                  screen.translate[1, 2] * pos[2] +
+                  screen.translate[1, 3],
+                  screen.translate[2, 1] * pos[1] +
+                  screen.translate[2, 2] * pos[2] +
+                  screen.translate[2, 3],
+                  0.0)),
+    ]
     colors = [
         Float32.((1 .-
-                  (1 .- (red(strokecolor), green(strokecolor), blue(strokecolor))) .*
-                  alpha(strokecolor))),
+                  (1 .- (red(color), green(color), blue(color))) .*
+                  alpha(color))),
     ]
-    radius = scale[1] / (2 * min(w, h))
+    radius = scale[1]
 
     if !isempty(screen.tasks) && screen.tasks[end].type == CircleTask &&
+       screen.tasks[end].scene == scene &&
        screen.tasks[end].markersize == radius
         task = screen.tasks[end]
         append!(task.vertices, vertices)
         append!(task.colors, colors)
     else
-        task = GGUITask(CircleTask, vertices, 0.0, radius, NTuple{3, Float32}[], colors)
+        task = GGUITask(scene, CircleTask, vertices, 0.0, radius, NTuple{3, Float32}[],
+                        colors)
         push!(screen.tasks, task)
     end
 

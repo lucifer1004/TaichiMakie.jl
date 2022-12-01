@@ -6,6 +6,7 @@ function taichi_draw(screen::Screen, scene::Scene)
     permute!(allplots, sortperm(zvals))
 
     last_scene = scene
+    save_ctx!(screen)
     for p in allplots
         to_value(get(p, :visible, true)) || continue
         # only prepare for scene when it changes
@@ -13,12 +14,17 @@ function taichi_draw(screen::Screen, scene::Scene)
         pparent = p.parent::Scene
         pparent.visible[] || continue
         if pparent != last_scene
-            prepare_for_scene(screen, pparent)
+            restore_ctx!(screen)
+            save_ctx!(screen)
+            prepare_for_scene!(screen, pparent)
             last_scene = pparent
         end
 
+        save_ctx!(screen)
         draw_plot(pparent, screen, p)
+        restore_ctx!(screen)
     end
+    restore_ctx!(screen)
 
     return
 end
@@ -31,7 +37,13 @@ function get_all_plots(scene, plots = AbstractPlot[])
     plots
 end
 
-function prepare_for_scene(screen::Screen, scene::Scene)
+function prepare_for_scene!(screen::Screen, scene::Scene)
+    w, h = size(screen)
+    scene_area = pixelarea(scene)[]
+    x0, y0 = scene_area.origin
+    screen.translate = Mat3f([1/w 0 x0/w
+                              0 1/h y0/h
+                              0 0 0])
 end
 
 function draw_background(screen::Screen, scene::Scene)
@@ -39,19 +51,20 @@ function draw_background(screen::Screen, scene::Scene)
         bg = scene.backgroundcolor[]
         r = pixelarea(scene)[]
         color = (red(bg), green(bg), blue(bg))
-        draw_rectangle(screen, origin(r)..., widths(r)..., color)
+        draw_rectangle(screen, scene, origin(r)..., widths(r)..., color)
     end
 
     foreach(child_scene -> draw_background(screen, child_scene), scene.children)
 end
 
-function draw_rectangle(screen::Screen, x, y, width, height, color)
+function draw_rectangle(screen::Screen, scene::Scene, x, y, width, height, color)
     vertices = NTuple{3, Float32}[(x, y, 0), (x + width, y, 0), (x + width, y + height, 0),
                                   (x, y + height, 0)]
     colors = NTuple{3, Float32}[color, color]
 
-    if !isempty(screen.tasks) && screen.tasks[end].type == TriangleTask
-        task = screen.tasks[end]
+    if !isempty(screen.tasks) && screen.tasks[end].type == TriangleTask &&
+       screen.tasks[end].scene == scene
+        task == screen.tasks[end]
         n = length(task.vertices)
         indices = NTuple{3, Int32}[((n + 0, n + 1, n + 2), (n + 0, n + 2, n + 3))]
         append!(task.indices, indices)
@@ -59,7 +72,7 @@ function draw_rectangle(screen::Screen, x, y, width, height, color)
         append!(task.colors, colors)
     else
         indices = NTuple{3, Int32}[(0, 1, 2), (0, 2, 3)]
-        task = GGUITask(TriangleTask, vertices, 0.0, 0.0, indices, colors)
+        task = GGUITask(scene, TriangleTask, vertices, 0.0, 0.0, indices, colors)
         push!(screen.tasks, task)
     end
 end
