@@ -46,15 +46,22 @@ function draw_background(screen::Screen, scene::Scene)
 end
 
 function draw_rectangle(screen::Screen, x, y, width, height, color)
-    vertices = TaichiField(2, ti.f32, 4)
-    push!(vertices, Float32.([x y; x+width y; x+width y+height; x y+height]))
+    vertices = NTuple{3, Float32}[(x, y, 0), (x + width, y, 0), (x + width, y + height, 0),
+                                  (x, y + height, 0)]
+    colors = NTuple{3, Float32}[color, color]
 
-    indices = TaichiField(3, ti.i32, 2)
-    push!(indices, Int32.([0 1 2; 0 2 3]))
-
-    screen.ti_canvas.canvas.triangles(vertices.field, color, indices.field)
-    destroy!(vertices)
-    destroy!(indices)
+    if !isempty(screen.tasks) && screen.tasks[end].type == TriangleTask
+        task = screen.tasks[end]
+        n = length(task.vertices)
+        indices = NTuple{3, Int32}[((n + 0, n + 1, n + 2), (n + 0, n + 2, n + 3))]
+        append!(task.indices, indices)
+        append!(task.vertices, vertices)
+        append!(task.colors, colors)
+    else
+        indices = NTuple{3, Int32}[(0, 1, 2), (0, 2, 3)]
+        task = GGUITask(TriangleTask, vertices, 0.0, 0.0, indices, colors)
+        push!(screen.tasks, task)
+    end
 end
 
 function draw_plot(scene::Scene, screen::Screen, primitive::Combined)

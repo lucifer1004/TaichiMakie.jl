@@ -2,6 +2,9 @@ function Makie.backend_show(screen::Screen, io::IO, ::MIME"image/png", scene::Sc
     Makie.push_screen!(scene, screen)
     taichi_draw(screen, scene)
     filename = io.name[7:(end - 1)]
+    for task in screen.tasks
+        apply!(screen, task)
+    end
     screen.ti_window.window.save_image(filename)
     destroy!(screen)
     return

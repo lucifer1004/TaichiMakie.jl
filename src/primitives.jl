@@ -1,6 +1,7 @@
 function draw_atomic(scene::Scene, screen::Screen,
                      @nospecialize(primitive::Union{Lines, LineSegments}))
-    fields = @get_attribute(primitive, (color, linewidth, linestyle))
+    @get_attribute(primitive, (color, linewidth, linestyle))
+    linewidth /= minimum(size(screen))
     linestyle = Makie.convert_attribute(linestyle, Makie.key"linestyle"())
     model = primitive[:model][]
     positions = primitive[1][]
@@ -14,53 +15,47 @@ function draw_atomic(scene::Scene, screen::Screen,
         color = numbers_to_colors(color, primitive)
     end
 
+    offset = 0
+    task = nothing
+
+    if !isempty(screen.tasks) && screen.tasks[end].type == LineTask &&
+       screen.tasks[end].linewidth ≈ linewidth
+        task = screen.tasks[end]
+        offset = length(task.vertices)
+    end
+
     n = length(projected_positions)
     if primitive isa LineSegments
         @assert iseven(n)
-        ti_indices = [Int32((i - 1) * 2 + j - 1) for i in 1:(n ÷ 2), j in 1:2]
-        indices = TaichiField(2, ti.i32, (n ÷ 2,))
+        indices = [Int32.((i * 2 - 2 + offset, i * 2 - 1 + offset, 0))
+                   for i in 1:(n ÷ 2)]
     else
-        ti_indices = [Int32(i + j - 2) for i in 1:(n - 1), j in 1:2]
-        indices = TaichiField(2, ti.i32, (n - 1,))
+        indices = [Int32.((i - 1 + offset, i + offset, 0)) for i in 1:(n - 1)]
     end
-    push!(indices, ti_indices)
 
-    ti_positions = zeros(Float32, n, 2)
     w, h = size(screen)
-    for i in 1:n
-        ti_positions[i, 1] = projected_positions[i][1] / w
-        ti_positions[i, 2] = projected_positions[i][2] / h
-    end
-
-    vertices = TaichiField(2, ti.f32, (n,))
-    push!(vertices, ti_positions)
-
-    linewidth /= minimum(size(screen))
+    vertices = [Float32.((projected_positions[i][1] / w,
+                          projected_positions[i][2] / h, 0))
+                for i in 1:n]
 
     if color isa AbstractArray
-        ti_colors = zeros(Float32, n, 3)
-        for i in 1:n
-            ti_colors[i, 1] = 1 - (1 - red(color[i])) * alpha(color[i])
-            ti_colors[i, 2] = 1 - (1 - green(color[i])) * alpha(color[i])
-            ti_colors[i, 3] = 1 - (1 - blue(color[i])) * alpha(color[i])
-        end
-
-        colors = TaichiField(3, ti.f32, (n,))
-        push!(colors, ti_colors)
-
-        screen.ti_canvas.canvas.lines(vertices.field, linewidth,
-                                      indices.field;
-                                      per_vertex_color = colors.field)
-
-        destroy!(colors)
+        colors = [Float32.((1 - (1 - red(color[i])) * alpha(color[i]),
+                            1 - (1 - green(color[i])) * alpha(color[i]),
+                            1 - (1 - blue(color[i])) * alpha(color[i])))
+                  for i in eachindex(color)]
     else
         color = 1 .- (1 .- (red(color), green(color), blue(color))) .* alpha(color)
-        screen.ti_canvas.canvas.lines(vertices.field, linewidth,
-                                      indices.field, color = color)
+        colors = fill(Float32.(color), length(indices))
     end
 
-    destroy!(indices)
-    destroy!(vertices)
+    if !isnothing(task)
+        append!(task.indices, indices)
+        append!(task.vertices, vertices)
+        append!(task.colors, colors)
+    else
+        task = GGUITask(LineTask, vertices, linewidth, 0.0, indices, colors)
+        push!(screen.tasks, task)
+    end
 end
 
 function draw_atomic(scene::Scene, screen::Screen, @nospecialize(primitive::Scatter))
@@ -130,15 +125,24 @@ function draw_marker(screen, shape, pos, scale, strokecolor, strokewidth,
                      marker_offset, rotation)
     marker_offset = marker_offset + scale ./ 2
     pos += Point2f(marker_offset[1], -marker_offset[2])
-    vertices = TaichiField(2, ti.f32, (1,))
     w, h = size(screen)
-    push!(vertices, [pos[1] / w pos[2] / h])
-    color = 1 .-
-            (1 .- (red(strokecolor), green(strokecolor), blue(strokecolor))) .*
-            alpha(strokecolor)
+    vertices = [Float32.((pos[1] / w, pos[2] / h, 0))]
+    colors = [
+        Float32.((1 .-
+                  (1 .- (red(strokecolor), green(strokecolor), blue(strokecolor))) .*
+                  alpha(strokecolor))),
+    ]
     radius = scale[1] / (2 * min(w, h))
-    screen.ti_canvas.canvas.circles(vertices.field, radius, color)
-    destroy!(vertices)
+
+    if !isempty(screen.tasks) && screen.tasks[end].type == CircleTask &&
+       screen.tasks[end].markersize == radius
+        task = screen.tasks[end]
+        append!(task.vertices, vertices)
+        append!(task.colors, colors)
+    else
+        task = GGUITask(CircleTask, vertices, 0.0, radius, NTuple{3, Float32}[], colors)
+        push!(screen.tasks, task)
+    end
 
     return
 end
