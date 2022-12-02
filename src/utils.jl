@@ -82,3 +82,18 @@ to_2d_rotation(quat::Makie.Quaternion) = -Makie.quaternion_to_2d_angle(quat)
 to_2d_rotation(vec::Vec2f) = atan(vec[1], vec[2])
 
 to_2d_rotation(n::Real) = n
+
+ColorTypes.alpha(c::NTuple{4, Float32}) = c[4]
+
+function rgbatuple(c::Colorant)
+    rgba = RGBA(c)
+    red(rgba), green(rgba), blue(rgba), alpha(rgba)
+end
+
+function rgbatuple(c)
+    colorant = to_color(c)
+    if !(colorant isa Colorant)
+        error("Can't convert $(c) to a colorant")
+    end
+    return rgbatuple(colorant)
+end

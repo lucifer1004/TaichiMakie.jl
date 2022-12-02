@@ -228,9 +228,6 @@ function draw_glyph_collection(screen, scene, position, glyph_collection, rotati
                       offsets) do glyph,
                                   glyphoffset, font, rotation, scale, color, strokewidth,
                                   strokecolor, offset
-        # cairoface = set_ft_font(ctx, font)
-        # old_matrix = get_font_matrix(ctx)
-
         p3_offset = to_ndim(Point3f, offset, 0)
 
         # Not renderable by font (e.g. '\n')
@@ -256,29 +253,22 @@ function draw_glyph_collection(screen, scene, position, glyph_collection, rotati
         xdiff = xproj - glyphpos
         ydiff = yproj - glyphpos
 
-        # mat = Cairo.CairoMatrix(xdiff[1], xdiff[2],
-        #                         ydiff[1], ydiff[2],
-        #                         0, 0)
-
         save_ctx!(screen)
-        # set_font_matrix(ctx, mat)
-        # show_glyph(ctx, glyph, glyphpos...)
-        restore_ctx!(screen)
-
-        if strokewidth > 0 && strokecolor != RGBAf(0, 0, 0, 0)
-            save_ctx!(screen)
-            # Cairo.move_to(ctx, glyphpos...)
-            # set_font_matrix(ctx, mat)
-            # glyph_path(ctx, glyph, glyphpos...)
-            # Cairo.set_source_rgba(ctx, rgbatuple(strokecolor)...)
-            # Cairo.set_line_width(ctx, strokewidth)
-            # Cairo.stroke(ctx)
-            restore_ctx!(screen)
+        glyphdata = getbitmap(glyph)
+        h, w = size(glyphdata)
+        dw = w / scale3[1]
+        dh = h / scale3[2]
+        color = rgbatuple(color)
+        for i in 1:h, j in 1:w
+            if glyphdata[i, j] > 0
+                alpha_ = glyphdata[i, j] / 255 * alpha(color)
+                col = 1 .- (1 .- (red(color), blue(color), green(color))) .* alpha_
+                draw_rectangle(screen, scene, glyphpos[1] + (j - 1) * dw,
+                               glyphpos[2] + (h - i) * dh, dw, dh, col)
+            end
         end
         restore_ctx!(screen)
-
-        # cairo_font_face_destroy(cairoface)
-        # set_font_matrix(ctx, old_matrix)
+        restore_ctx!(screen)
 
         return
     end
