@@ -77,7 +77,7 @@ function draw_atomic(scene::Scene, screen::Screen, @nospecialize(primitive::Scat
     font = to_font(to_value(get(primitive, :font, Makie.defaultfont())))
 
     colors = if color isa AbstractArray{<:Number}
-        numbers_to_colors(color, primitive)
+        Makie.numbers_to_colors(color, primitive)
     else
         color
     end
@@ -159,5 +159,130 @@ function draw_marker(scene, screen, shape, pos, scale, color, strokecolor, strok
         push!(screen.tasks, task)
     end
 
+    return
+end
+
+function draw_atomic(scene::Scene, screen::Screen,
+                     @nospecialize(primitive::Makie.Text{
+                                                         <:Tuple{
+                                                                 <:Union{
+                                                                         AbstractArray{
+                                                                                       <:Makie.GlyphCollection
+                                                                                       },
+                                                                         Makie.GlyphCollection
+                                                                         }}}))
+    @get_attribute(primitive, (rotation, model, space, markerspace, offset))
+    position = primitive.position[]
+    # use cached glyph info
+    glyph_collection = to_value(primitive[1])
+
+    draw_glyph_collection(screen, scene, position, glyph_collection,
+                          remove_billboard(rotation),
+                          model, space, markerspace, offset)
+
+    return nothing
+end
+
+function draw_glyph_collection(screen, scene, positions, glyph_collections::AbstractArray,
+                               rotation,
+                               model::Mat, space, markerspace, offset)
+
+    # TODO: why is the Ref around model necessary? doesn't broadcast_foreach handle staticarrays matrices?
+    broadcast_foreach(positions, glyph_collections, rotation, Ref(model), space,
+                      markerspace, offset) do pos, glayout, ro, mo, sp, msp, off
+        return draw_glyph_collection(screen, scene, pos, glayout, ro, mo, sp, msp, off)
+    end
+end
+
+_deref(x) = x
+_deref(x::Ref) = x[]
+
+function draw_glyph_collection(screen, scene, position, glyph_collection, rotation, _model,
+                               space, markerspace,
+                               offsets)
+    glyphs = glyph_collection.glyphs
+    glyphoffsets = glyph_collection.origins
+    fonts = glyph_collection.fonts
+    rotations = glyph_collection.rotations
+    scales = glyph_collection.scales
+    colors = glyph_collection.colors
+    strokewidths = glyph_collection.strokewidths
+    strokecolors = glyph_collection.strokecolors
+
+    model = _deref(_model)
+    model33 = model[Vec(1, 2, 3), Vec(1, 2, 3)]
+    id = Mat4f(I)
+
+    glyph_pos = let
+        transform_func = scene.transformation.transform_func[]
+        p = Makie.apply_transform(transform_func, position)
+
+        Makie.clip_to_space(scene.camera, markerspace) *
+        Makie.space_to_clip(scene.camera, space) *
+        model * to_ndim(Point4f, to_ndim(Point3f, p, 0), 1)
+    end
+
+    save_ctx!(screen)
+    broadcast_foreach(glyphs, glyphoffsets, fonts, rotations, scales, colors, strokewidths,
+                      strokecolors,
+                      offsets) do glyph,
+                                  glyphoffset, font, rotation, scale, color, strokewidth,
+                                  strokecolor, offset
+        # cairoface = set_ft_font(ctx, font)
+        # old_matrix = get_font_matrix(ctx)
+
+        p3_offset = to_ndim(Point3f, offset, 0)
+
+        # Not renderable by font (e.g. '\n')
+        # TODO, filter out \n in GlyphCollection, and render unrenderables as box
+        glyph == 0 && return
+
+        save_ctx!(screen)
+        # Cairo.set_source_rgba(ctx, rgbatuple(color)...)
+
+        # offsets and scale apply in markerspace
+        gp3 = glyph_pos[Vec(1, 2, 3)] ./ glyph_pos[4] .+
+              model33 * (glyphoffset .+ p3_offset)
+
+        scale3 = scale isa Number ? Point3f(scale, scale, 0) : to_ndim(Point3f, scale, 0)
+
+        xvec = rotation * (scale3[1] * Point3f(1, 0, 0))
+        yvec = rotation * (scale3[2] * Point3f(0, -1, 0))
+
+        glyphpos = _project_position(scene, markerspace, gp3, id, true)
+        xproj = _project_position(scene, markerspace, gp3 + model33 * xvec, id, true)
+        yproj = _project_position(scene, markerspace, gp3 + model33 * yvec, id, true)
+
+        xdiff = xproj - glyphpos
+        ydiff = yproj - glyphpos
+
+        # mat = Cairo.CairoMatrix(xdiff[1], xdiff[2],
+        #                         ydiff[1], ydiff[2],
+        #                         0, 0)
+
+        save_ctx!(screen)
+        # set_font_matrix(ctx, mat)
+        # show_glyph(ctx, glyph, glyphpos...)
+        restore_ctx!(screen)
+
+        if strokewidth > 0 && strokecolor != RGBAf(0, 0, 0, 0)
+            save_ctx!(screen)
+            # Cairo.move_to(ctx, glyphpos...)
+            # set_font_matrix(ctx, mat)
+            # glyph_path(ctx, glyph, glyphpos...)
+            # Cairo.set_source_rgba(ctx, rgbatuple(strokecolor)...)
+            # Cairo.set_line_width(ctx, strokewidth)
+            # Cairo.stroke(ctx)
+            restore_ctx!(screen)
+        end
+        restore_ctx!(screen)
+
+        # cairo_font_face_destroy(cairoface)
+        # set_font_matrix(ctx, old_matrix)
+
+        return
+    end
+
+    restore_ctx!(screen)
     return
 end

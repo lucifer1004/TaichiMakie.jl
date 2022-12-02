@@ -1,7 +1,7 @@
 module TaichiMakie
 
 using ColorTypes: red, green, blue, alpha, Colorant
-using GeometryBasics: origin, widths, Mat3f, Mat4f, Polygon
+using GeometryBasics: origin, widths, Mat, Mat3f, Mat4f, Polygon
 using LinearAlgebra
 using Reexport: @reexport
 @reexport using Makie

@@ -38,7 +38,7 @@ mutable struct Screen <: Makie.MakieScreen
 end
 
 function apply!(screen::Screen, task::GGUITask)
-    scale_factor = 1 / minimum(size(screen))
+    scale_factor = 1 / width(screen)
 
     vertices = [task.vertices[i][j] for i in eachindex(task.vertices), j in 1:2]
     ti_vertices = ti.Vector.field(2, ti.f32, length(task.vertices))
