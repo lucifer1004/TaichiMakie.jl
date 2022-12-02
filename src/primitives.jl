@@ -229,46 +229,32 @@ function draw_glyph_collection(screen, scene, position, glyph_collection, rotati
                                   glyphoffset, font, rotation, scale, color, strokewidth,
                                   strokecolor, offset
         p3_offset = to_ndim(Point3f, offset, 0)
-
-        # Not renderable by font (e.g. '\n')
-        # TODO, filter out \n in GlyphCollection, and render unrenderables as box
         glyph == 0 && return
-
-        save_ctx!(screen)
-        # Cairo.set_source_rgba(ctx, rgbatuple(color)...)
-
-        # offsets and scale apply in markerspace
         gp3 = glyph_pos[Vec(1, 2, 3)] ./ glyph_pos[4] .+
               model33 * (glyphoffset .+ p3_offset)
 
         scale3 = scale isa Number ? Point3f(scale, scale, 0) : to_ndim(Point3f, scale, 0)
-
-        xvec = rotation * (scale3[1] * Point3f(1, 0, 0))
-        yvec = rotation * (scale3[2] * Point3f(0, -1, 0))
-
-        glyphpos = _project_position(scene, markerspace, gp3, id, true)
-        xproj = _project_position(scene, markerspace, gp3 + model33 * xvec, id, true)
-        yproj = _project_position(scene, markerspace, gp3 + model33 * yvec, id, true)
-
-        xdiff = xproj - glyphpos
-        ydiff = yproj - glyphpos
-
-        save_ctx!(screen)
-        glyphdata = getbitmap(glyph)
+        glyphpos = _project_position(scene, markerspace, gp3, id, false)
+        glyphdata, metric = getbitmap(glyph)
         h, w = size(glyphdata)
-        dw = w / scale3[1]
-        dh = h / scale3[2]
+
+        dw = scale3[1] / DEFAULT_GLYPH_PIXEL_SIZE[]
+        dh = scale3[2] / DEFAULT_GLYPH_PIXEL_SIZE[]
         color = rgbatuple(color)
         for i in 1:h, j in 1:w
             if glyphdata[i, j] > 0
                 alpha_ = glyphdata[i, j] / 255 * alpha(color)
                 col = 1 .- (1 .- (red(color), blue(color), green(color))) .* alpha_
-                draw_rectangle(screen, scene, glyphpos[1] + (j - 1) * dw,
-                               glyphpos[2] + (h - i) * dh, dw, dh, col)
+                x0 = glyphpos[1] + (j - 1) * dw
+                y0 = glyphpos[2] + (h - i) * dh
+                x = screen.translate[1, 1] * x0 + screen.translate[1, 2] * y0 +
+                    screen.translate[1, 3]
+                y = screen.translate[2, 1] * x0 + screen.translate[2, 2] * y0 +
+                    screen.translate[2, 3]
+                draw_rectangle(screen, scene, x, y, dw * screen.translate[1, 1],
+                               dh * screen.translate[2, 2], col)
             end
         end
-        restore_ctx!(screen)
-        restore_ctx!(screen)
 
         return
     end

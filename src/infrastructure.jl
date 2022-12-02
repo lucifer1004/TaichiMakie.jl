@@ -64,9 +64,9 @@ function draw_rectangle(screen::Screen, scene::Scene, x, y, width, height, color
 
     if !isempty(screen.tasks) && screen.tasks[end].type == TriangleTask &&
        screen.tasks[end].scene == scene
-        task == screen.tasks[end]
+        task = screen.tasks[end]
         n = length(task.vertices)
-        indices = NTuple{3, Int32}[((n + 0, n + 1, n + 2), (n + 0, n + 2, n + 3))]
+        indices = NTuple{3, Int32}[(n + 0, n + 1, n + 2), (n + 0, n + 2, n + 3)]
         append!(task.indices, indices)
         append!(task.vertices, vertices)
         append!(task.colors, colors)

@@ -1,9 +1,8 @@
+const DEFAULT_FACE = Ref{Union{FTFont, Nothing}}(nothing)
+const DEFAULT_GLYPH_PIXEL_SIZE = Ref{Int}(128)
+
 function getbitmap(glyph)
-    DEFAULT_FACE.load_char(glyph)
-    bm = DEFAULT_FACE.glyph.bitmap
-    h = pyconvert(Int, bm.rows)
-    w = pyconvert(Int, bm.width)
-    @show h, w
-    data = collect(reshape(pyconvert(Vector, bm.buffer), (w, h))')
-    return data
+    # Why do we need to add 2 here?
+    bmp, metric = renderface(DEFAULT_FACE[], glyph + 2, DEFAULT_GLYPH_PIXEL_SIZE[])
+    return bmp', metric
 end

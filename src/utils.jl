@@ -83,6 +83,9 @@ to_2d_rotation(vec::Vec2f) = atan(vec[1], vec[2])
 
 to_2d_rotation(n::Real) = n
 
+ColorTypes.red(c::NTuple{4, Float32}) = c[1]
+ColorTypes.green(c::NTuple{4, Float32}) = c[2]
+ColorTypes.blue(c::NTuple{4, Float32}) = c[3]
 ColorTypes.alpha(c::NTuple{4, Float32}) = c[4]
 
 function rgbatuple(c::Colorant)

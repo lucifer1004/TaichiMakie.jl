@@ -2,6 +2,5 @@
 python = ">=3.6,<3.11"
 
 [pip.deps]
-freetype-py = ""
 numpy = ""
 taichi = ""
