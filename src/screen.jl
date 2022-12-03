@@ -1,7 +1,5 @@
 export Screen
 
-@enum GGUITaskType CircleTask LineTask TriangleTask
-
 struct TaichiWindow
     window::Py
     width::Int
@@ -18,18 +16,20 @@ end
 
 struct GGUITask
     scene::Scene
-    type::GGUITaskType
+    type::Symbol
     vertices::Vector{NTuple{3, Float32}}
-    linewidth::Float32
-    markersize::Float32
     indices::Vector{NTuple{3, Int32}}
     colors::Vector{NTuple{3, Float32}}
+    attributes::Dict{Symbol, Any}
+end
+
+function GGUITask(scene, type, vertices, indices, colors)
+    return GGUITask(scene, type, vertices, indices, colors, Dict{Symbol, Any}())
 end
 
 mutable struct Screen <: Makie.MakieScreen
     ti_window::TaichiWindow
     ti_canvas::Py
-    ti_scene::Py
     scene::Scene
     config::ScreenConfig
     translate::Mat3f
@@ -40,40 +40,56 @@ end
 function apply!(screen::Screen, task::GGUITask)
     scale_factor = 1 / width(screen)
 
-    vertices = [task.vertices[i][j] for i in eachindex(task.vertices), j in 1:2]
-    ti_vertices = ti.Vector.field(2, ti.f32, length(task.vertices))
-    ti_vertices.from_numpy(np.array(vertices))
+    if task.type == :mesh
+        vertices = [task.vertices[i][j] for i in eachindex(task.vertices), j in 1:3]
+        ti_vertices = ti.Vector.field(3, ti.f32, length(task.vertices))
+        ti_vertices.from_numpy(np.array(vertices))
+    else
+        vertices = [task.vertices[i][j] for i in eachindex(task.vertices), j in 1:2]
+        ti_vertices = ti.Vector.field(2, ti.f32, length(task.vertices))
+        ti_vertices.from_numpy(np.array(vertices))
+    end
 
     colors = [task.colors[i][j]
               for i in eachindex(task.colors), j in 1:3]
     ti_colors = ti.Vector.field(3, ti.f32, length(task.colors))
     ti_colors.from_numpy(np.array(colors))
 
-    if task.type == LineTask
+    if task.type == :line
         indices = [task.indices[i][j] for i in eachindex(task.indices), j in 1:2]
         ti_indices = ti.Vector.field(2, ti.i32, length(task.indices))
         ti_indices.from_numpy(np.array(indices))
         screen.ti_canvas.lines(vertices = ti_vertices,
-                               width = task.linewidth * scale_factor,
+                               width = get(task.attributes, :linewidth, 0.0) * scale_factor,
                                indices = ti_indices,
                                per_vertex_color = ti_colors)
-    elseif task.type == TriangleTask
+    elseif task.type == :triangle
         indices = [task.indices[i][j] for i in eachindex(task.indices), j in 1:3]
         ti_indices = ti.Vector.field(3, ti.i32, length(task.indices))
         ti_indices.from_numpy(np.array(indices))
         screen.ti_canvas.triangles(vertices = ti_vertices, indices = ti_indices,
                                    per_vertex_color = ti_colors)
-    elseif task.type == CircleTask
+    elseif task.type == :circle
         screen.ti_canvas.circles(centers = ti_vertices,
-                                 radius = task.markersize * scale_factor,
+                                 radius = get(task.attributes, :markersize, 0.0) *
+                                          scale_factor,
                                  per_vertex_color = ti_colors)
+    elseif task.type == :mesh
+        # TODO: actually render meshes
+
+        # camera = ti.ui.Camera()
+        # camera.position(5, 2, 2)
+        # scene = ti.ui.Scene()
+        # scene.set_camera(camera)
+        # scene.ambient_light((0.8, 0.8, 0.8))
+        # scene.mesh(ti_vertices, per_vertex_color = ti_colors)
+        # screen.ti_canvas.scene(scene)
     end
 end
 
 function Screen(scene::Scene; screen_config...)
     ti_window = TaichiWindow()
     ti_canvas = ti_window.window.get_canvas()
-    ti_scene = ti.ui.Scene()
     config = Makie.merge_screen_config(ScreenConfig, screen_config...)
     translate = Mat3f([1/ti_window.width 0 0
                        0 1/ti_window.height 0
@@ -81,7 +97,7 @@ function Screen(scene::Scene; screen_config...)
     stack = Mat3f[]
     tasks = GGUITask[]
 
-    return Screen(ti_window, ti_canvas, ti_scene, scene, config, translate, stack, tasks)
+    return Screen(ti_window, ti_canvas, scene, config, translate, stack, tasks)
 end
 
 width(screen::Screen) = screen.ti_window.width
@@ -121,14 +137,13 @@ function Screen(scene::Scene, config::ScreenConfig, io_or_path::Union{Nothing, S
     w, h = round.(Int, size(scene))
     ti_window = TaichiWindow("TaichiMakie", w, h)
     ti_canvas = ti_window.window.get_canvas()
-    ti_scene = ti.ui.Scene()
     translate = Mat3f([1/ti_window.width 0 0
                        0 1/ti_window.height 0
                        0 0 0])
     stack = Mat3f[]
     tasks = GGUITask[]
 
-    return Screen(ti_window, ti_canvas, ti_scene, scene, config, translate, stack, tasks)
+    return Screen(ti_window, ti_canvas, scene, config, translate, stack, tasks)
 end
 
 const LAST_INLINE = Ref(true)

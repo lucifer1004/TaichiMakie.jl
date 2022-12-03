@@ -72,7 +72,7 @@ function draw_rectangle(screen::Screen, scene::Scene, x0, y0, w0, h0, color)
     color = 1 .- (1 .- (red(color), green(color), blue(color))) .* alpha(color)
     colors = NTuple{3, Float32}[color, color, color, color]
 
-    if !isempty(screen.tasks) && screen.tasks[end].type == TriangleTask &&
+    if !isempty(screen.tasks) && screen.tasks[end].type == :triangle &&
        screen.tasks[end].scene == scene
         task = screen.tasks[end]
         n = length(task.vertices)
@@ -82,7 +82,7 @@ function draw_rectangle(screen::Screen, scene::Scene, x0, y0, w0, h0, color)
         append!(task.colors, colors)
     else
         indices = NTuple{3, Int32}[(0, 1, 2), (0, 2, 3)]
-        task = GGUITask(scene, TriangleTask, vertices, 0.0, 0.0, indices, colors)
+        task = GGUITask(scene, :triangle, vertices, indices, colors)
         push!(screen.tasks, task)
     end
 end

@@ -17,9 +17,9 @@ function draw_atomic(scene::Scene, screen::Screen,
     offset = 0
     task = nothing
 
-    if !isempty(screen.tasks) && screen.tasks[end].type == LineTask &&
+    if !isempty(screen.tasks) && screen.tasks[end].type == :line &&
        screen.tasks[end].scene == scene &&
-       screen.tasks[end].linewidth ≈ linewidth
+       get(screen.tasks[end].attributes, :linewidth, 0.0) ≈ linewidth
         task = screen.tasks[end]
         offset = length(task.vertices)
     end
@@ -33,15 +33,7 @@ function draw_atomic(scene::Scene, screen::Screen,
         indices = [Int32.((i - 1 + offset, i + offset, 0)) for i in 1:(n - 1)]
     end
 
-    vertices = map(1:n) do i
-        Float32.((screen.translate[1, 1] * projected_positions[i][1] +
-                  screen.translate[1, 2] * projected_positions[i][2] +
-                  screen.translate[1, 3],
-                  screen.translate[2, 1] * projected_positions[i][1] +
-                  screen.translate[2, 2] * projected_positions[i][2] +
-                  screen.translate[2, 3],
-                  0.0))
-    end
+    vertices = [translate(screen, pos) for pos in projected_positions]
 
     if color isa AbstractArray
         colors = [Float32.((1 - (1 - red(color[i])) * alpha(color[i]),
@@ -58,7 +50,8 @@ function draw_atomic(scene::Scene, screen::Screen,
         append!(task.vertices, vertices)
         append!(task.colors, colors)
     else
-        task = GGUITask(scene, LineTask, vertices, linewidth, 0.0, indices, colors)
+        task = GGUITask(scene, :line, vertices, indices, colors,
+                        Dict(:linewidth => linewidth))
         push!(screen.tasks, task)
     end
 end
@@ -147,15 +140,15 @@ function draw_marker(scene, screen, shape, pos, scale, color, strokecolor, strok
     ]
     radius = scale[1]
 
-    if !isempty(screen.tasks) && screen.tasks[end].type == CircleTask &&
+    if !isempty(screen.tasks) && screen.tasks[end].type == :circle &&
        screen.tasks[end].scene == scene &&
-       screen.tasks[end].markersize == radius
+       get(screen.tasks[end].attributes, :markersize, 0.0) == radius
         task = screen.tasks[end]
         append!(task.vertices, vertices)
         append!(task.colors, colors)
     else
-        task = GGUITask(scene, CircleTask, vertices, 0.0, radius, NTuple{3, Float32}[],
-                        colors)
+        task = GGUITask(scene, :circle, vertices, NTuple{3, Float32}[],
+                        colors, Dict(:markersize => radius))
         push!(screen.tasks, task)
     end
 
@@ -371,4 +364,320 @@ function _draw_rect_heatmap(screen, scene, xys, ni, nj, colors)
         draw_rectangle(screen, scene, p1[1], p1[2], p2[1] - p1[1], p4[2] - p1[2],
                        colors[i, j])
     end
+end
+
+function draw_atomic(scene::Scene, screen::Screen, @nospecialize(primitive::Makie.Mesh))
+    mesh = primitive[1][]
+    if Makie.cameracontrols(scene) isa Union{Camera2D, Makie.PixelCamera, Makie.EmptyCamera}
+        draw_mesh2D(scene, screen, primitive, mesh)
+    else
+        if !haskey(primitive, :faceculling)
+            primitive[:faceculling] = Observable(-10)
+        end
+        draw_mesh3D(scene, screen, primitive, mesh)
+    end
+    return nothing
+end
+
+function draw_mesh2D(scene, screen, @nospecialize(plot), @nospecialize(mesh))
+    @get_attribute(plot, (color,))
+    color = to_color(hasproperty(mesh, :color) ? mesh.color : color)
+    vs = decompose(Point2f, mesh)::Vector{Point2f}
+    fs = decompose(GLTriangleFace, mesh)::Vector{GLTriangleFace}
+    uv = decompose_uv(mesh)::Union{Nothing, Vector{Vec2f}}
+    model = plot.model[]::Mat4f
+    colormap = haskey(plot, :colormap) ? to_colormap(plot.colormap[]) : nothing
+    colorrange = convert_attribute(to_value(get(plot, :colorrange, nothing)),
+                                   key"colorrange"())::Union{Nothing, Vec2f}
+
+    lowclip = get_color_attr(plot, :lowclip)
+    highclip = get_color_attr(plot, :highclip)
+    nan_color = get_color_attr(plot, :nan_color)
+
+    cols = per_face_colors(color, colormap, colorrange, nothing, fs, nothing, uv,
+                           lowclip, highclip, nan_color)
+
+    space = to_value(get(plot, :space, :data))::Symbol
+    return draw_mesh2D(scene, screen, cols, space, vs, fs, model)
+end
+
+function draw_mesh2D(scene, screen, per_face_cols, space::Symbol,
+                     vs::Vector{Point2f}, fs::Vector{GLTriangleFace}, model::Mat4f)
+    vertices = NTuple{3, Float32}[]
+    colors = NTuple{3, Float32}[]
+
+    for (f, (c1, c2, c3)) in zip(fs, per_face_cols)
+        t1, t2, t3 = project_position.(scene, space, vs[f], (model,))
+        append!(vertices, [translate(screen, t) for t in [t1, t2, t3]])
+        append!(colors, to_taichi_color.([c1, c2, c3]))
+    end
+
+    if !isempty(screen.tasks) && screen.tasks[end].type == :triangle
+        task = screen.tasks[end]
+        n = length(task.vertices)
+        indices = [Int32.((n + 3 * i - 3, n + 3 * i - 2, n + 3 * i - 1))
+                   for i in eachindex(fs)]
+        append!(task.vertices, vertices)
+        append!(task.indices, indices)
+        append!(task.colors, colors)
+    else
+        indices = [Int32.((3 * i - 3, 3 * i - 2, 3 * i - 1))
+                   for i in eachindex(fs)]
+        push!(screen.tasks,
+              GGUITask(scene, :triangle, vertices, indices, colors))
+    end
+
+    return nothing
+end
+
+function average_z(positions, face)
+    vs = positions[face]
+    return sum(v -> v[3], vs) / length(vs)
+end
+
+nan2zero(x) = !isnan(x) * x
+
+function draw_mesh3D(scene, screen, attributes, mesh; pos = Vec4f(0), scale = 1.0f0)
+    # Priorize colors of the mesh if present
+    @get_attribute(attributes, (color,))
+
+    colormap = haskey(attributes, :colormap) ? to_colormap(attributes.colormap[]) : nothing
+    colorrange = convert_attribute(to_value(get(attributes, :colorrange, nothing)),
+                                   key"colorrange"())::Union{Nothing, Vec2f}
+    matcap = to_value(get(attributes, :matcap, nothing))
+
+    color = hasproperty(mesh, :color) ? mesh.color : color
+    meshpoints = decompose(Point3f, mesh)::Vector{Point3f}
+    meshfaces = decompose(GLTriangleFace, mesh)::Vector{GLTriangleFace}
+    meshnormals = decompose_normals(mesh)::Vector{Vec3f}
+    meshuvs = texturecoordinates(mesh)::Union{Nothing, Vector{Vec2f}}
+
+    lowclip = get_color_attr(attributes, :lowclip)
+    highclip = get_color_attr(attributes, :highclip)
+    nan_color = get_color_attr(attributes, :nan_color)
+
+    per_face_col = per_face_colors(color, colormap, colorrange, matcap, meshfaces,
+                                   meshnormals, meshuvs,
+                                   lowclip, highclip, nan_color)
+
+    @get_attribute(attributes, (shading, diffuse,
+                                specular, shininess, faceculling))
+
+    model = attributes.model[]::Mat4f
+    space = to_value(get(attributes, :space, :data))::Symbol
+
+    return draw_mesh3D(scene, screen, space, meshpoints, meshfaces, meshnormals,
+                       per_face_col, pos, scale,
+                       model, shading::Bool, diffuse::Vec3f,
+                       specular::Vec3f, shininess::Float32, faceculling::Int)
+end
+
+function draw_mesh3D(scene, screen, space, meshpoints, meshfaces, meshnormals, per_face_col,
+                     pos, scale,
+                     model, shading, diffuse,
+                     specular, shininess, faceculling)
+    view = ifelse(is_data_space(space), scene.camera.view[], Mat4f(I))
+    projection = Makie.space_to_clip(scene.camera, space, false)
+    i = Vec(1, 2, 3)
+    normalmatrix = transpose(inv(view[i, i] * model[i, i]))
+
+    # Mesh data
+    # transform to view/camera space
+    func = Makie.transform_func_obs(scene)[]
+    # pass func as argument to function, so that we get a function barrier
+    # and have `func` be fully typed inside closure
+    vs = broadcast(meshpoints, (func,)) do v, f
+        # Should v get a nan2zero?
+        v = Makie.apply_transform(f, v)
+        p4d = to_ndim(Vec4f, scale .* to_ndim(Vec3f, v, 0.0f0), 1.0f0)
+        return view * (model * p4d .+ to_ndim(Vec4f, pos, 0.0f0))
+    end
+
+    ns = map(n -> normalize(normalmatrix * n), meshnormals)
+    # Light math happens in view/camera space
+    pointlight = Makie.get_point_light(scene)
+    lightposition = if !isnothing(pointlight)
+        pointlight.position[]
+    else
+        Vec3f(0)
+    end
+
+    ambientlight = Makie.get_ambient_light(scene)
+    ambient = if !isnothing(ambientlight)
+        c = ambientlight.color[]
+        Vec3f(c.r, c.g, c.b)
+    else
+        Vec3f(0)
+    end
+
+    lightpos = (view * to_ndim(Vec4f, lightposition, 1.0))[Vec(1, 2, 3)]
+
+    # Camera to screen space
+    ts = map(vs) do v
+        clip = projection * v
+        @inbounds begin
+            p = (clip ./ clip[4])[Vec(1, 2)]
+            p_yflip = Vec2f(p[1], -p[2])
+            p_0_to_1 = (p_yflip .+ 1.0f0) ./ 2.0f0
+        end
+        p = p_0_to_1 .* scene.camera.resolution[]
+        return Vec3f(p[1], p[2], clip[3])
+    end
+
+    # Approximate zorder
+    average_zs = map(f -> average_z(ts, f), meshfaces)
+    zorder = sortperm(average_zs)
+
+    # Face culling
+    zorder = filter(i -> any(last.(ns[meshfaces[i]]) .> faceculling), zorder)
+
+    draw_pattern(screen, scene, zorder, shading, meshfaces, ts, per_face_col, ns, vs,
+                 lightpos,
+                 shininess, diffuse,
+                 ambient, specular)
+    return
+end
+
+function _calculate_shaded_vertexcolors(N, v, c, lightpos, ambient, diffuse, specular,
+                                        shininess)
+    L = normalize(lightpos .- v[Vec(1, 2, 3)])
+    diff_coeff = max(dot(L, N), 0.0f0)
+    H = normalize(L + normalize(-v[Vec(1, 2, 3)]))
+    spec_coeff = max(dot(H, N), 0.0f0)^shininess
+    c = RGBAf(c)
+    new_c_part1 = (ambient .+ diff_coeff .* diffuse) .* Vec3f(c.r, c.g, c.b) #.+
+    new_c = new_c_part1 .+ specular * spec_coeff
+    return RGBAf(new_c..., c.alpha)
+end
+
+function draw_pattern(screen, scene, zorder, shading, meshfaces, ts, per_face_col, ns, vs,
+                      lightpos,
+                      shininess, diffuse,
+                      ambient, specular)
+    vertices = NTuple{3, Float32}[]
+    colors = NTuple{3, Float32}[]
+
+    for k in reverse(zorder)
+        f = meshfaces[k]
+        # avoid SizedVector through Face indexing
+        t1 = ts[f[1]]
+        t2 = ts[f[2]]
+        t3 = ts[f[3]]
+
+        facecolors = per_face_col[k]
+        # light calculation
+        if shading
+            c1, c2, c3 = Base.Cartesian.@ntuple 3 i->begin
+                # these face index expressions currently allocate for SizedVectors
+                # if done like `ns[f]`
+                N = ns[f[i]]
+                v = vs[f[i]]
+                c = facecolors[i]
+                _calculate_shaded_vertexcolors(N, v, c, lightpos, ambient, diffuse,
+                                               specular, shininess)
+            end
+        else
+            c1, c2, c3 = facecolors
+        end
+
+        append!(vertices, [translate(screen, t) for t in [t1, t2, t3]])
+        append!(colors, to_taichi_color.([c1, c2, c3]))
+    end
+
+    if !isempty(screen.tasks) && screen.tasks[end].type == :mesh &&
+       screen.tasks[end].scene == scene
+        task = screen.tasks[end]
+        n = length(task.vertices)
+        indices = [Int32.((n + i * 3 - 3, n + i * 3 - 2, n + i * 3 - 1))
+                   for i in 1:length(zorder)]
+        append!(task.vertices, vertices)
+        append!(task.colors, colors)
+        append!(task.indices, indices)
+    else
+        indices = [Int32.((i * 3 - 3, i * 3 - 2, i * 3 - 1)) for i in 1:length(zorder)]
+        push!(screen.tasks, GGUITask(scene, :mesh, vertices, indices, colors))
+    end
+end
+
+################################################################################
+#                                   Surface                                    #
+################################################################################
+
+function draw_atomic(scene::Scene, screen::Screen, @nospecialize(primitive::Makie.Surface))
+    # Pretend the surface plot is a mesh plot and plot that instead
+    mesh = surface2mesh(primitive[1][], primitive[2][], primitive[3][])
+    old = primitive[:color]
+    if old[] === nothing
+        primitive[:color] = primitive[3]
+    end
+    if !haskey(primitive, :faceculling)
+        primitive[:faceculling] = Observable(-10)
+    end
+    draw_mesh3D(scene, screen, primitive, mesh)
+    primitive[:color] = old
+    return nothing
+end
+
+function surface2mesh(xs, ys, zs::AbstractMatrix)
+    ps = Makie.matrix_grid(p -> nan2zero.(p), xs, ys, zs)
+    rect = Tesselation(Rect2f(0, 0, 1, 1), size(zs))
+    faces = decompose(QuadFace{Int}, rect)
+    uv = map(x -> Vec2f(1.0f0 - x[2], 1.0f0 - x[1]), decompose_uv(rect))
+    uvm = GeometryBasics.Mesh(GeometryBasics.meta(ps; uv = uv), faces)
+    return GeometryBasics.normal_mesh(uvm)
+end
+
+################################################################################
+#                                 MeshScatter                                  #
+################################################################################
+
+function draw_atomic(scene::Scene, screen::Screen,
+                     @nospecialize(primitive::Makie.MeshScatter))
+    @get_attribute(primitive, (color, model, marker, markersize, rotations))
+
+    if color isa AbstractArray{<:Number}
+        color = numbers_to_colors(color, primitive)
+    end
+
+    m = convert_attribute(marker, key"marker"(), key"meshscatter"())
+    pos = primitive[1][]
+    # For correct z-ordering we need to be in view/camera or screen space
+    model = copy(model)
+    view = scene.camera.view[]
+
+    zorder = sortperm(pos;
+                      by = p -> begin
+                          p4d = to_ndim(Vec4f, to_ndim(Vec3f, p, 0.0f0), 1.0f0)
+                          cam_pos = view * model * p4d
+                          cam_pos[3] / cam_pos[4]
+                      end, rev = false)
+
+    submesh = Attributes(; model = model,
+                         color = color,
+                         shading = primitive.shading, diffuse = primitive.diffuse,
+                         specular = primitive.specular, shininess = primitive.shininess,
+                         faceculling = get(primitive, :faceculling, -10))
+
+    if !(rotations isa Vector)
+        R = Makie.rotationmatrix4(to_rotation(rotations))
+        submesh[:model] = model * R
+    end
+    scales = primitive[:markersize][]
+
+    for i in zorder
+        p = pos[i]
+        if color isa AbstractVector
+            submesh[:color] = color[i]
+        end
+        if rotations isa Vector
+            R = Makie.rotationmatrix4(to_rotation(rotations[i]))
+            submesh[:model] = model * R
+        end
+        scale = markersize isa Vector ? markersize[i] : markersize
+
+        draw_mesh3D(scene, screen, submesh, m; pos = p,
+                    scale = scale isa Real ? Vec3f(scale) : to_ndim(Vec3f, scale, 1.0f0))
+    end
+
+    return nothing
 end
