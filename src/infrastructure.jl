@@ -51,16 +51,26 @@ function draw_background(screen::Screen, scene::Scene)
         bg = scene.backgroundcolor[]
         r = pixelarea(scene)[]
         color = (red(bg), green(bg), blue(bg))
+
         draw_rectangle(screen, scene, origin(r)..., widths(r)..., color)
     end
 
     foreach(child_scene -> draw_background(screen, child_scene), scene.children)
 end
 
-function draw_rectangle(screen::Screen, scene::Scene, x, y, width, height, color)
+function draw_rectangle(screen::Screen, scene::Scene, x0, y0, w0, h0, color)
+    x = screen.translate[1, 1] * x0 + screen.translate[1, 2] * y0 +
+        screen.translate[1, 3]
+    y = screen.translate[2, 1] * x0 + screen.translate[2, 2] * y0 +
+        screen.translate[2, 3]
+    width = screen.translate[1, 1] * w0
+    height = screen.translate[2, 2] * h0
+
     vertices = NTuple{3, Float32}[(x, y, 0), (x + width, y, 0), (x + width, y + height, 0),
                                   (x, y + height, 0)]
-    colors = NTuple{3, Float32}[color, color]
+
+    color = 1 .- (1 .- (red(color), green(color), blue(color))) .* alpha(color)
+    colors = NTuple{3, Float32}[color, color, color, color]
 
     if !isempty(screen.tasks) && screen.tasks[end].type == TriangleTask &&
        screen.tasks[end].scene == scene

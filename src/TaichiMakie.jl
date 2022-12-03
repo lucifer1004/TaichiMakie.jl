@@ -1,6 +1,6 @@
 module TaichiMakie
 
-using ColorTypes: red, green, blue, alpha, Colorant, ColorTypes, RGBA
+using ColorTypes: red, green, blue, alpha, Color, Colorant, ColorAlpha, ColorTypes, RGBA
 using FreeTypeAbstraction
 using GeometryBasics: origin, widths, Mat, Mat3f, Mat4f, Polygon
 using LinearAlgebra

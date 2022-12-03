@@ -50,7 +50,7 @@ function draw_atomic(scene::Scene, screen::Screen,
                   for i in eachindex(color)]
     else
         color = 1 .- (1 .- (red(color), green(color), blue(color))) .* alpha(color)
-        colors = fill(Float32.(color), length(indices))
+        colors = fill(Float32.(color), n)
     end
 
     if !isnothing(task)
@@ -245,14 +245,9 @@ function draw_glyph_collection(screen, scene, position, glyph_collection, rotati
             if glyphdata[i, j] > 0
                 alpha_ = glyphdata[i, j] / 255 * alpha(color)
                 col = 1 .- (1 .- (red(color), blue(color), green(color))) .* alpha_
-                x0 = glyphpos[1] + (j - 1) * dw
-                y0 = glyphpos[2] + (h - i) * dh
-                x = screen.translate[1, 1] * x0 + screen.translate[1, 2] * y0 +
-                    screen.translate[1, 3]
-                y = screen.translate[2, 1] * x0 + screen.translate[2, 2] * y0 +
-                    screen.translate[2, 3]
-                draw_rectangle(screen, scene, x, y, dw * screen.translate[1, 1],
-                               dh * screen.translate[2, 2], col)
+                x = glyphpos[1] + (j - 1) * dw
+                y = glyphpos[2] + (h - i) * dh
+                draw_rectangle(screen, scene, x, y, dw, dh, col)
             end
         end
 
@@ -261,4 +256,119 @@ function draw_glyph_collection(screen, scene, position, glyph_collection, rotati
 
     restore_ctx!(screen)
     return
+end
+
+"""
+    regularly_spaced_array_to_range(arr)
+If possible, converts `arr` to a range.
+If not, returns array unchanged.
+"""
+function regularly_spaced_array_to_range(arr)
+    diffs = unique!(sort!(diff(arr)))
+    step = sum(diffs) ./ length(diffs)
+    if all(x -> x ≈ step, diffs)
+        m, M = extrema(arr)
+        if step < zero(step)
+            m, M = M, m
+        end
+        # don't use stop=M, since that may not include M
+        return range(m; step = step, length = length(arr))
+    else
+        return arr
+    end
+end
+
+regularly_spaced_array_to_range(arr::AbstractRange) = arr
+
+function premultiplied_rgba(a::AbstractArray{<:ColorAlpha})
+    return map(premultiplied_rgba, a)
+end
+premultiplied_rgba(a::AbstractArray{<:Color}) = RGBA.(a)
+
+premultiplied_rgba(r::RGBA) = RGBA(r.r * r.alpha, r.g * r.alpha, r.b * r.alpha, r.alpha)
+premultiplied_rgba(c::Colorant) = premultiplied_rgba(RGBA(c))
+
+function draw_atomic(scene::Scene, screen::Screen,
+                     @nospecialize(primitive::Union{Heatmap, Image}))
+    image = primitive[3][]
+    xs, ys = primitive[1][], primitive[2][]
+    if !(xs isa AbstractVector)
+        l, r = extrema(xs)
+        N = size(image, 1)
+        xs = range(l, r; length = N + 1)
+    else
+        xs = regularly_spaced_array_to_range(xs)
+    end
+    if !(ys isa AbstractVector)
+        l, r = extrema(ys)
+        N = size(image, 2)
+        ys = range(l, r; length = N + 1)
+    else
+        ys = regularly_spaced_array_to_range(ys)
+    end
+    model = primitive.model[]::Mat4f
+    interpolate = to_value(primitive.interpolate)
+
+    t = Makie.transform_func_obs(primitive)[]
+    identity_transform = (t === identity || t isa Tuple && all(x -> x === identity, t)) &&
+                         (abs(model[1, 2]) < 1e-15)
+    regular_grid = xs isa AbstractRange && ys isa AbstractRange
+
+    if interpolate
+        if !regular_grid
+            error("$(typeof(primitive).parameters[1]) with interpolate = true with a non-regular grid is not supported right now.")
+        end
+        if !identity_transform
+            error("$(typeof(primitive).parameters[1]) with interpolate = true with a non-identity transform is not supported right now.")
+        end
+    end
+
+    imsize = ((first(xs), last(xs)), (first(ys), last(ys)))
+    # find projected image corners
+    # this already takes care of flipping the image to correct cairo orientation
+    space = to_value(get(primitive, :space, :data))
+    xy = project_position(scene, space, Point2f(first.(imsize)), model)
+    xymax = project_position(scene, space, Point2f(last.(imsize)), model)
+    w, h = xymax .- xy
+
+    # find projected image corners
+    # this already takes care of flipping the image to correct cairo orientation
+    space = to_value(get(primitive, :space, :data))
+    xys = [project_position(scene, space, Point2f(x, y), model) for x in xs, y in ys]
+    colors = to_rgba_image(image, primitive)
+
+    # Note: xs and ys should have size ni+1, nj+1
+    ni, nj = size(image)
+    if ni + 1 != length(xs) || nj + 1 != length(ys)
+        error("Error in conversion pipeline. xs and ys should have size ni+1, nj+1. Found: xs: $(length(xs)), ys: $(length(ys)), ni: $(ni), nj: $(nj)")
+    end
+    _draw_rect_heatmap(screen, scene, xys, ni, nj, colors)
+end
+
+function _draw_rect_heatmap(screen, scene, xys, ni, nj, colors)
+    @inbounds for i in 1:ni, j in 1:nj
+        p1 = xys[i, j]
+        p2 = xys[i + 1, j]
+        p3 = xys[i + 1, j + 1]
+        p4 = xys[i, j + 1]
+
+        # Rectangles and polygons that are directly adjacent usually show
+        # white lines between them due to anti aliasing. To avoid this we
+        # increase their size slightly.
+
+        if alpha(colors[i, j]) == 1
+            # sign.(p - center) gives the direction in which we need to
+            # extend the polygon. (Which may change due to rotations in the
+            # model matrix.) (i!=1) etc is used to avoid increasing the
+            # outer extent of the heatmap.
+            center = 0.25f0 * (p1 + p2 + p3 + p4)
+            p1 += sign.(p1 - center) .* Point2f(0.5f0 * (i != 1), 0.5f0 * (j != 1))
+            p2 += sign.(p2 - center) .* Point2f(0.5f0 * (i != ni), 0.5f0 * (j != 1))
+            p3 += sign.(p3 - center) .* Point2f(0.5f0 * (i != ni), 0.5f0 * (j != nj))
+            p4 += sign.(p4 - center) .* Point2f(0.5f0 * (i != 1), 0.5f0 * (j != nj))
+        end
+
+        draw_rectangle(screen, scene, p1[1], p1[2], p2[1] - p1[1], p4[2] - p1[2],
+                       colors[i, j])
+    end
 end

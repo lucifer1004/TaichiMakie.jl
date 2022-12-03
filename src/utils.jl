@@ -83,10 +83,25 @@ to_2d_rotation(vec::Vec2f) = atan(vec[1], vec[2])
 
 to_2d_rotation(n::Real) = n
 
+ColorTypes.red(c::NTuple{3, Float32}) = c[1]
+ColorTypes.green(c::NTuple{3, Float32}) = c[2]
+ColorTypes.blue(c::NTuple{3, Float32}) = c[3]
+ColorTypes.alpha(c::NTuple{3, Float32}) = 1.0
+
+ColorTypes.red(c::NTuple{3, Float64}) = c[1]
+ColorTypes.green(c::NTuple{3, Float64}) = c[2]
+ColorTypes.blue(c::NTuple{3, Float64}) = c[3]
+ColorTypes.alpha(c::NTuple{3, Float64}) = 1.0
+
 ColorTypes.red(c::NTuple{4, Float32}) = c[1]
 ColorTypes.green(c::NTuple{4, Float32}) = c[2]
 ColorTypes.blue(c::NTuple{4, Float32}) = c[3]
 ColorTypes.alpha(c::NTuple{4, Float32}) = c[4]
+
+ColorTypes.red(c::NTuple{4, Float64}) = c[1]
+ColorTypes.green(c::NTuple{4, Float64}) = c[2]
+ColorTypes.blue(c::NTuple{4, Float64}) = c[3]
+ColorTypes.alpha(c::NTuple{4, Float64}) = c[4]
 
 function rgbatuple(c::Colorant)
     rgba = RGBA(c)
@@ -99,4 +114,30 @@ function rgbatuple(c)
         error("Can't convert $(c) to a colorant")
     end
     return rgbatuple(colorant)
+end
+
+function to_rgba_image(img::AbstractMatrix{<:AbstractFloat}, attributes)
+    Makie.@get_attribute attributes (colormap, colorrange, nan_color, lowclip, highclip)
+
+    nan_color = Makie.to_color(nan_color)
+    lowclip = isnothing(lowclip) ? lowclip : Makie.to_color(lowclip)
+    highclip = isnothing(highclip) ? highclip : Makie.to_color(highclip)
+
+    [get_rgba_pixel(pixel, colormap, colorrange, nan_color, lowclip, highclip)
+     for pixel in img]
+end
+
+to_rgba_image(img::AbstractMatrix{<:Colorant}, attributes) = RGBAf.(img)
+
+function get_rgba_pixel(pixel, colormap, colorrange, nan_color, lowclip, highclip)
+    vmin, vmax = colorrange
+    if isnan(pixel)
+        RGBAf(nan_color)
+    elseif pixel < vmin && !isnothing(lowclip)
+        RGBAf(lowclip)
+    elseif pixel > vmax && !isnothing(highclip)
+        RGBAf(highclip)
+    else
+        RGBAf(Makie.interpolated_getindex(colormap, pixel, colorrange))
+    end
 end
