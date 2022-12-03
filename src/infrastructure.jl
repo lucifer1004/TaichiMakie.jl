@@ -66,22 +66,21 @@ function draw_rectangle(screen::Screen, scene::Scene, x0, y0, w0, h0, color)
     width = screen.translate[1, 1] * w0
     height = screen.translate[2, 2] * h0
 
-    vertices = NTuple{3, Float32}[(x, y, 0), (x + width, y, 0), (x + width, y + height, 0),
-                                  (x, y + height, 0)]
+    vertices = [Vec3f(x, y, 0), Vec3f(x + width, y, 0), Vec3f(x + width, y + height, 0),
+        Vec3f(x, y + height, 0)]
 
-    color = 1 .- (1 .- (red(color), green(color), blue(color))) .* alpha(color)
-    colors = NTuple{3, Float32}[color, color, color, color]
+    colors = fill(to_taichi_color(color), 4)
 
     if !isempty(screen.tasks) && screen.tasks[end].type == :triangle &&
        screen.tasks[end].scene == scene
         task = screen.tasks[end]
         n = length(task.vertices)
-        indices = NTuple{3, Int32}[(n + 0, n + 1, n + 2), (n + 0, n + 2, n + 3)]
+        indices = [Vec3(n + 0, n + 1, n + 2), Vec3(n + 0, n + 2, n + 3)]
         append!(task.indices, indices)
         append!(task.vertices, vertices)
         append!(task.colors, colors)
     else
-        indices = NTuple{3, Int32}[(0, 1, 2), (0, 2, 3)]
+        indices = [Vec3i(0, 1, 2), Vec3i(0, 2, 3)]
         task = GGUITask(scene, :triangle, vertices, indices, colors)
         push!(screen.tasks, task)
     end

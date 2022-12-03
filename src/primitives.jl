@@ -27,22 +27,18 @@ function draw_atomic(scene::Scene, screen::Screen,
     n = length(projected_positions)
     if primitive isa LineSegments
         @assert iseven(n)
-        indices = [Int32.((i * 2 - 2 + offset, i * 2 - 1 + offset, 0))
+        indices = [Vec3i(i * 2 - 2 + offset, i * 2 - 1 + offset, 0)
                    for i in 1:(n ÷ 2)]
     else
-        indices = [Int32.((i - 1 + offset, i + offset, 0)) for i in 1:(n - 1)]
+        indices = [Vec3i(i - 1 + offset, i + offset, 0) for i in 1:(n - 1)]
     end
 
     vertices = [translate(screen, pos) for pos in projected_positions]
 
     if color isa AbstractArray
-        colors = [Float32.((1 - (1 - red(color[i])) * alpha(color[i]),
-                            1 - (1 - green(color[i])) * alpha(color[i]),
-                            1 - (1 - blue(color[i])) * alpha(color[i])))
-                  for i in eachindex(color)]
+        colors = to_taichi_color.(color)
     else
-        color = 1 .- (1 .- (red(color), green(color), blue(color))) .* alpha(color)
-        colors = fill(Float32.(color), n)
+        colors = fill(to_taichi_color(color), n)
     end
 
     if !isnothing(task)
@@ -124,20 +120,8 @@ function draw_marker(scene, screen, shape, pos, scale, color, strokecolor, strok
                      marker_offset, rotation)
     marker_offset = marker_offset + scale ./ 2
     pos += Point2f(marker_offset[1], -marker_offset[2])
-    vertices = [
-        Float32.((screen.translate[1, 1] * pos[1] +
-                  screen.translate[1, 2] * pos[2] +
-                  screen.translate[1, 3],
-                  screen.translate[2, 1] * pos[1] +
-                  screen.translate[2, 2] * pos[2] +
-                  screen.translate[2, 3],
-                  0.0)),
-    ]
-    colors = [
-        Float32.((1 .-
-                  (1 .- (red(color), green(color), blue(color))) .*
-                  alpha(color))),
-    ]
+    vertices = [translate(screen, pos)]
+    colors = [to_taichi_color(color)]
     radius = scale[1]
 
     if !isempty(screen.tasks) && screen.tasks[end].type == :circle &&
@@ -403,8 +387,8 @@ end
 
 function draw_mesh2D(scene, screen, per_face_cols, space::Symbol,
                      vs::Vector{Point2f}, fs::Vector{GLTriangleFace}, model::Mat4f)
-    vertices = NTuple{3, Float32}[]
-    colors = NTuple{3, Float32}[]
+    vertices = Vec3f[]
+    colors = Vec3f[]
 
     for (f, (c1, c2, c3)) in zip(fs, per_face_cols)
         t1, t2, t3 = project_position.(scene, space, vs[f], (model,))
@@ -415,13 +399,13 @@ function draw_mesh2D(scene, screen, per_face_cols, space::Symbol,
     if !isempty(screen.tasks) && screen.tasks[end].type == :triangle
         task = screen.tasks[end]
         n = length(task.vertices)
-        indices = [Int32.((n + 3 * i - 3, n + 3 * i - 2, n + 3 * i - 1))
+        indices = [Vec3i(n + 3 * i - 3, n + 3 * i - 2, n + 3 * i - 1)
                    for i in eachindex(fs)]
         append!(task.vertices, vertices)
         append!(task.indices, indices)
         append!(task.colors, colors)
     else
-        indices = [Int32.((3 * i - 3, 3 * i - 2, 3 * i - 1))
+        indices = [Vec3i(3 * i - 3, 3 * i - 2, 3 * i - 1)
                    for i in eachindex(fs)]
         push!(screen.tasks,
               GGUITask(scene, :triangle, vertices, indices, colors))
@@ -501,6 +485,11 @@ function draw_mesh3D(scene, screen, space, meshpoints, meshfaces, meshnormals, p
     else
         Vec3f(0)
     end
+    lightcol = if !isnothing(pointlight)
+        pointlight.radiance[]
+    else
+        Vec3f(0)
+    end
 
     ambientlight = Makie.get_ambient_light(scene)
     ambient = if !isnothing(ambientlight)
@@ -531,8 +520,10 @@ function draw_mesh3D(scene, screen, space, meshpoints, meshfaces, meshnormals, p
     # Face culling
     zorder = filter(i -> any(last.(ns[meshfaces[i]]) .> faceculling), zorder)
 
-    draw_pattern(screen, scene, zorder, shading, meshfaces, ts, per_face_col, ns, vs,
-                 lightpos,
+    draw_pattern(screen, scene,
+                 zorder, shading, meshfaces, ts, per_face_col,
+                 ns, vs,
+                 lightpos, lightcol,
                  shininess, diffuse,
                  ambient, specular)
     return
@@ -550,12 +541,14 @@ function _calculate_shaded_vertexcolors(N, v, c, lightpos, ambient, diffuse, spe
     return RGBAf(new_c..., c.alpha)
 end
 
-function draw_pattern(screen, scene, zorder, shading, meshfaces, ts, per_face_col, ns, vs,
-                      lightpos,
+function draw_pattern(screen, scene,
+                      zorder, shading, meshfaces, ts, per_face_col,
+                      ns, vs,
+                      lightpos, lightcol,
                       shininess, diffuse,
                       ambient, specular)
-    vertices = NTuple{3, Float32}[]
-    colors = NTuple{3, Float32}[]
+    vertices = Vec3f[]
+    colors = Vec3f[]
 
     for k in reverse(zorder)
         f = meshfaces[k]
@@ -580,22 +573,30 @@ function draw_pattern(screen, scene, zorder, shading, meshfaces, ts, per_face_co
             c1, c2, c3 = facecolors
         end
 
-        append!(vertices, [translate(screen, t) for t in [t1, t2, t3]])
+        append!(vertices, [t1, t2, t3])
+        # append!(vertices, [translate(screen, t) for t in [t1, t2, t3]])
         append!(colors, to_taichi_color.([c1, c2, c3]))
     end
 
+    attr = Dict(:lightpos => lightpos,
+                :lightcol => lightcol,
+                :ambient => ambient,
+                :diffuse => diffuse,
+                :shininess => shininess,
+                :specular => specular)
+
     if !isempty(screen.tasks) && screen.tasks[end].type == :mesh &&
-       screen.tasks[end].scene == scene
+       screen.tasks[end].scene == scene && screen.tasks[end].attributes == attr
         task = screen.tasks[end]
         n = length(task.vertices)
-        indices = [Int32.((n + i * 3 - 3, n + i * 3 - 2, n + i * 3 - 1))
+        indices = [Vec3i(n + i * 3 - 3, n + i * 3 - 2, n + i * 3 - 1)
                    for i in 1:length(zorder)]
         append!(task.vertices, vertices)
         append!(task.colors, colors)
         append!(task.indices, indices)
     else
-        indices = [Int32.((i * 3 - 3, i * 3 - 2, i * 3 - 1)) for i in 1:length(zorder)]
-        push!(screen.tasks, GGUITask(scene, :mesh, vertices, indices, colors))
+        indices = [Vec3i(i * 3 - 3, i * 3 - 2, i * 3 - 1) for i in 1:length(zorder)]
+        push!(screen.tasks, GGUITask(scene, :mesh, vertices, indices, colors, attr))
     end
 end
 

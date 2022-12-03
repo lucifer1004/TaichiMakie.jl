@@ -1,11 +1,11 @@
 function translate(screen, vertex)
-    return Float32.((screen.translate[1, 1] * vertex[1] +
-                     screen.translate[1, 2] * vertex[2] +
-                     screen.translate[1, 3],
-                     screen.translate[2, 1] * vertex[1] +
-                     screen.translate[2, 2] * vertex[2] +
-                     screen.translate[2, 3],
-                     0.0))
+    return Vec3f(screen.translate[1, 1] * vertex[1] +
+                 screen.translate[1, 2] * vertex[2] +
+                 screen.translate[1, 3],
+                 screen.translate[2, 1] * vertex[1] +
+                 screen.translate[2, 2] * vertex[2] +
+                 screen.translate[2, 3],
+                 0.0)
 end
 
 function project_position(scene, transform_func::T, space, point, model,
@@ -93,6 +93,11 @@ to_2d_rotation(vec::Vec2f) = atan(vec[1], vec[2])
 
 to_2d_rotation(n::Real) = n
 
+ColorTypes.red(c::Vec{3, Float32}) = c[1]
+ColorTypes.green(c::Vec{3, Float32}) = c[2]
+ColorTypes.blue(c::Vec{3, Float32}) = c[3]
+ColorTypes.alpha(c::Vec{3, Float32}) = 1.0
+
 ColorTypes.red(c::NTuple{3, Float32}) = c[1]
 ColorTypes.green(c::NTuple{3, Float32}) = c[2]
 ColorTypes.blue(c::NTuple{3, Float32}) = c[3]
@@ -114,11 +119,11 @@ ColorTypes.blue(c::NTuple{4, Float64}) = c[3]
 ColorTypes.alpha(c::NTuple{4, Float64}) = c[4]
 
 function to_taichi_color(c)
-    r = red(c)
-    g = green(c)
-    b = blue(c)
-    a = alpha(c)
-    return Float32.((1 - (1 - r) * (1 - a), 1 - (1 - g) * (1 - a), 1 - (1 - b) * (1 - a)))
+    r = clamp(red(c), 0, 1)
+    g = clamp(green(c), 0, 1)
+    b = clamp(blue(c), 0, 1)
+    a = clamp(alpha(c), 0, 1)
+    return Vec3f(1 - (1 - r) * a, 1 - (1 - g) * a, 1 - (1 - b) * a)
 end
 
 function rgbatuple(c::Colorant)

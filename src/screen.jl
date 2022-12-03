@@ -17,9 +17,9 @@ end
 struct GGUITask
     scene::Scene
     type::Symbol
-    vertices::Vector{NTuple{3, Float32}}
-    indices::Vector{NTuple{3, Int32}}
-    colors::Vector{NTuple{3, Float32}}
+    vertices::Vector{Vec3f}
+    indices::Vector{Vec3i}
+    colors::Vector{Vec3f}
     attributes::Dict{Symbol, Any}
 end
 
@@ -77,13 +77,22 @@ function apply!(screen::Screen, task::GGUITask)
     elseif task.type == :mesh
         # TODO: actually render meshes
 
-        # camera = ti.ui.Camera()
-        # camera.position(5, 2, 2)
-        # scene = ti.ui.Scene()
-        # scene.set_camera(camera)
-        # scene.ambient_light((0.8, 0.8, 0.8))
-        # scene.mesh(ti_vertices, per_vertex_color = ti_colors)
-        # screen.ti_canvas.scene(scene)
+        ambient = to_taichi_color(get(task.attributes, :ambient,
+                                      Makie.get_ambient_light(task.scene).color[]))
+        pointlight = Makie.get_point_light(task.scene)
+        lightpos = get(task.attributes, :lightpos, pointlight.position[])
+        lightcol = to_taichi_color(get(task.attributes, :lightcol, pointlight.radiance[]))
+
+        @show vertices
+
+        camera = ti.ui.Camera()
+        camera.position(5, 2, 2)
+        scene = ti.ui.Scene()
+        scene.set_camera(camera)
+        scene.point_light(lightpos, lightcol)
+        scene.ambient_light(ambient)
+        scene.mesh(ti_vertices, per_vertex_color = ti_colors)
+        screen.ti_canvas.scene(scene)
     end
 end
 

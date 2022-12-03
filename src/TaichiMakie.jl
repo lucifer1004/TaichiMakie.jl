@@ -14,6 +14,7 @@ using PythonCall: Py, pynew, pycopy!, pyconvert, pyimport, pytruth, pyeq
 
 const np = pynew()
 const ti = pynew()
+const Vec3i = Vec3{Int32}
 
 include("fonts.jl")
 include("taichi_utils.jl")
