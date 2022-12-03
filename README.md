@@ -18,14 +18,37 @@ lines!(ax, 1:10, 1:10)
 save("test.png", fig)
 ```
 
-## Implemented Features
+## Gallery
 
-- Line
-- Scatter
-- Heatmap
+### Contour plot
+
+![Contour plot](./examples/contour.png)
+
+### Heatmap
+
+![Heatmap](examples/heatmap.png)
+
+### Histogram
+
+![Histogram](examples/hist.png)
+
+### Scatter plot
+
+![Scatter](examples/scatter.png)
+
+### Violin plot
+
+![Violin](examples/violin.png)
+
+### Layout
+
+![Layout](examples/layout.png)
+
+> This plot contains some bugs.
 
 ## Known Issues
 
 - Taichi GGUI does not support the following features:
   - anti-aliasing
   - alpha
+- Support for meshes is still erroneous

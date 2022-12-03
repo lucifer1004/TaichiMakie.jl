@@ -40,11 +40,7 @@ end
 function apply!(screen::Screen, task::GGUITask)
     scale_factor = 1 / width(screen)
 
-    if task.type == :mesh
-        vertices = [task.vertices[i][j] for i in eachindex(task.vertices), j in 1:3]
-        ti_vertices = ti.Vector.field(3, ti.f32, length(task.vertices))
-        ti_vertices.from_numpy(np.array(vertices))
-    else
+    if task.type != :mesh
         vertices = [task.vertices[i][j] for i in eachindex(task.vertices), j in 1:2]
         ti_vertices = ti.Vector.field(2, ti.f32, length(task.vertices))
         ti_vertices.from_numpy(np.array(vertices))
@@ -75,22 +71,36 @@ function apply!(screen::Screen, task::GGUITask)
                                           scale_factor,
                                  per_vertex_color = ti_colors)
     elseif task.type == :mesh
-        # TODO: actually render meshes
-
+        # TODO: correctly render meshes
         ambient = to_taichi_color(get(task.attributes, :ambient,
                                       Makie.get_ambient_light(task.scene).color[]))
         pointlight = Makie.get_point_light(task.scene)
         lightpos = get(task.attributes, :lightpos, pointlight.position[])
-        lightcol = to_taichi_color(get(task.attributes, :lightcol, pointlight.radiance[]))
 
-        @show vertices
+        pixel_space = task.scene.camera.pixel_space[]
+        projected_vertices = [pixel_space *
+                              to_ndim(Vec4f, task.vertices[i], 0.0)
+                              for i in eachindex(task.vertices)]
+        vertices = [projected_vertices[i][j]
+                    for i in eachindex(projected_vertices), j in 1:3]
+        # vertices = [task.vertices[i][j] for i in eachindex(task.vertices), j in 1:3]
+        ti_vertices = ti.Vector.field(3, ti.f32, length(task.vertices))
+        ti_vertices.from_numpy(np.array(vertices))
 
         camera = ti.ui.Camera()
-        camera.position(5, 2, 2)
+        camera.position(lightpos...)
+        camctl = task.scene.camera_controls
+
+        if camctl isa Camera3D
+            @show camctl.lookat
+            camera.lookat(camctl.lookat[]...)
+            camera.up(camctl.upvector[]...)
+        end
+
         scene = ti.ui.Scene()
         scene.set_camera(camera)
-        scene.point_light(lightpos, lightcol)
         scene.ambient_light(ambient)
+        scene.point_light(lightpos, (1.0, 1.0, 1.0))
         scene.mesh(ti_vertices, per_vertex_color = ti_colors)
         screen.ti_canvas.scene(scene)
     end

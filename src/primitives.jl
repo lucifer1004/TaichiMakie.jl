@@ -314,11 +314,7 @@ function draw_atomic(scene::Scene, screen::Screen,
     xys = [project_position(scene, space, Point2f(x, y), model) for x in xs, y in ys]
     colors = to_rgba_image(image, primitive)
 
-    # Note: xs and ys should have size ni+1, nj+1
     ni, nj = size(image)
-    if ni + 1 != length(xs) || nj + 1 != length(ys)
-        error("Error in conversion pipeline. xs and ys should have size ni+1, nj+1. Found: xs: $(length(xs)), ys: $(length(ys)), ni: $(ni), nj: $(nj)")
-    end
     _draw_rect_heatmap(screen, scene, xys, ni, nj, colors)
 end
 
@@ -523,7 +519,7 @@ function draw_mesh3D(scene, screen, space, meshpoints, meshfaces, meshnormals, p
     draw_pattern(screen, scene,
                  zorder, shading, meshfaces, ts, per_face_col,
                  ns, vs,
-                 lightpos, lightcol,
+                 lightpos,
                  shininess, diffuse,
                  ambient, specular)
     return
@@ -544,7 +540,7 @@ end
 function draw_pattern(screen, scene,
                       zorder, shading, meshfaces, ts, per_face_col,
                       ns, vs,
-                      lightpos, lightcol,
+                      lightpos,
                       shininess, diffuse,
                       ambient, specular)
     vertices = Vec3f[]
@@ -579,7 +575,6 @@ function draw_pattern(screen, scene,
     end
 
     attr = Dict(:lightpos => lightpos,
-                :lightcol => lightcol,
                 :ambient => ambient,
                 :diffuse => diffuse,
                 :shininess => shininess,
