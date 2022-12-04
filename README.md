@@ -22,7 +22,7 @@ save("test.png", fig)
 
 ### Contour plot
 
-[[![Contour plot](./examples/contour.png)](./examples/contour.jl)
+[![Contour plot](./examples/contour.png)](./examples/contour.jl)
 
 ### Heatmap
 
