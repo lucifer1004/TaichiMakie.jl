@@ -88,7 +88,6 @@ function apply!(screen::Screen, task::GGUITask)
                               for i in eachindex(task.vertices)]
         vertices = [projected_vertices[i][j]
                     for i in eachindex(projected_vertices), j in 1:3]
-        # vertices = [task.vertices[i][j] for i in eachindex(task.vertices), j in 1:3]
         ti_vertices = ti.Vector.field(3, ti.f32, length(task.vertices))
         ti_vertices.from_numpy(np.array(vertices))
 
