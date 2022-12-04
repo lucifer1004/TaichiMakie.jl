@@ -1,4 +1,4 @@
-export Screen
+export Screen, destroy!
 
 struct TaichiWindow
     window::Py
@@ -193,4 +193,9 @@ function Makie.colorbuffer(screen::Screen)
     w, h = size(screen)
     [ARGB32(RGBAf(buf[i, j, 1], buf[i, j, 2], buf[i, j, 3], buf[i, j, 4]))
      for i in 1:w, j in 1:h]
+end
+
+function Makie.apply_screen_config!(screen::Screen, ::TaichiMakie.ScreenConfig, ::Scene,
+                                    ::IOStream, ::MIME{Symbol("image/png")})
+    screen
 end
