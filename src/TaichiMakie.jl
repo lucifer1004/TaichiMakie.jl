@@ -10,7 +10,7 @@ using GeometryBasics: decompose_uv, decompose_normals, texturecoordinates, origi
 using LinearAlgebra
 using Reexport: @reexport
 @reexport using Makie
-using Makie: is_data_space
+using Makie: is_data_space, numbers_to_colors
 using PythonCall: pynew, pycopy!, pyconvert, pyimport, pytruth, Py, PyArray
 
 const np = pynew()
