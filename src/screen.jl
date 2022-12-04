@@ -2,17 +2,22 @@ export Screen
 
 struct TaichiWindow
     window::Py
+    visible::Bool
     width::Int
     height::Int
 end
 
-function TaichiWindow(title::AbstractString = "TaichiMakie", width = 512, height = 512)
-    window = ti.ui.Window(title, (width, height), show_window = false)
-    return TaichiWindow(window, width, height)
+function TaichiWindow(title::AbstractString = "TaichiMakie", width = 512, height = 512;
+                      show_window = false)
+    window = ti.ui.Window(title, (width, height), show_window = show_window)
+    return TaichiWindow(window, show_window, width, height)
 end
 
 struct ScreenConfig
+    visible::Bool
 end
+
+ScreenConfig() = ScreenConfig(false)
 
 struct GGUITask
     scene::Scene
@@ -106,10 +111,8 @@ function apply!(screen::Screen, task::GGUITask)
     end
 end
 
-function Screen(scene::Scene; screen_config...)
-    ti_window = TaichiWindow()
+function Screen(scene::Scene, config::ScreenConfig, ti_window)
     ti_canvas = ti_window.window.get_canvas()
-    config = Makie.merge_screen_config(ScreenConfig, screen_config...)
     translate = Mat3f([1/ti_window.width 0 0
                        0 1/ti_window.height 0
                        0 0 0])
@@ -119,9 +122,37 @@ function Screen(scene::Scene; screen_config...)
     return Screen(ti_window, ti_canvas, scene, config, translate, stack, tasks)
 end
 
+function merge_screen_config(::Type{Config}, screen_config_kw) where {Config}
+    @show screen_config_kw
+    kw_nt = screen_config_kw
+    arguments = map(fieldnames(Config)) do name
+        get(kw_nt, name, nothing)
+    end
+    return Config(arguments...)
+end
+
+function Screen(scene::Scene; screen_config...)
+    config = merge_screen_config(ScreenConfig, screen_config)
+    w, h = round.(Int, size(scene))
+    ti_window = TaichiWindow("TaichiMakie", w, h; show_window = config.visible)
+    return Screen(scene, config, ti_window)
+end
+
+function Screen(scene::Scene, config::ScreenConfig, io_or_path::Union{Nothing, String, IO},
+                typ::Union{MIME, Symbol})
+    w, h = round.(Int, size(scene))
+    ti_window = TaichiWindow("TaichiMakie", w, h; show_window = config.visible)
+    return Screen(scene, config, ti_window)
+end
+
+visible(screen::Screen) = screen.ti_window.visible
 width(screen::Screen) = screen.ti_window.width
 height(screen::Screen) = screen.ti_window.height
 Base.size(screen::Screen) = (width(screen), height(screen))
+
+function Base.show(io::IO, ::MIME"text/plain", screen::Screen)
+    println(io, "TaichiMakie.Screen")
+end
 
 function save_ctx!(screen::Screen)
     push!(screen.stack, screen.translate)
@@ -139,30 +170,12 @@ function destroy!(screen::Screen)
     destroy!(screen.ti_window)
 end
 
-function empty!(screen::Screen)
+function Base.empty!(screen::Screen)
     screen.ti_canvas.canvas.set_background_color((1.0, 1.0, 1.0))
 end
 
 function Base.isopen(screen::Screen)
     return pytruth(screen.window.running)
-end
-
-function Base.show(io::IO, ::MIME"text/plain", screen::Screen)
-    println(io, "TaichiMakie.Screen")
-end
-
-function Screen(scene::Scene, config::ScreenConfig, io_or_path::Union{Nothing, String, IO},
-                typ::Union{MIME, Symbol})
-    w, h = round.(Int, size(scene))
-    ti_window = TaichiWindow("TaichiMakie", w, h)
-    ti_canvas = ti_window.window.get_canvas()
-    translate = Mat3f([1/ti_window.width 0 0
-                       0 1/ti_window.height 0
-                       0 0 0])
-    stack = Mat3f[]
-    tasks = GGUITask[]
-
-    return Screen(ti_window, ti_canvas, scene, config, translate, stack, tasks)
 end
 
 const LAST_INLINE = Ref(true)
@@ -179,4 +192,8 @@ end
 function Makie.colorbuffer(screen::Screen)
     empty!(screen)
     taichi_draw(screen, screen.scene)
+    buf = PyArray(screen.ti_window.window.get_image_buffer_as_numpy())
+    # w, h = size(screen)
+    # [ARGB32(RGBAf(buf[i, j, 1], buf[i, j, 2], buf[i, j, 3], buf[i, j, 4]))
+    #  for i in 1:w, j in 1:h]
 end

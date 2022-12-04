@@ -3,6 +3,7 @@
 *.jl.mem
 /*.jl
 /*.py
+/*.ipynb
 /*.png
 /imgui.ini
 /docs/build/

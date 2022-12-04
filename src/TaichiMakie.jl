@@ -1,6 +1,7 @@
 module TaichiMakie
 
-using ColorTypes: red, green, blue, alpha, Color, Colorant, ColorAlpha, ColorTypes, RGBA
+using ColorTypes: red, green, blue, alpha, ARGB32, Color, Colorant, ColorAlpha, ColorTypes,
+                  RGBA
 using FreeTypeAbstraction
 using GeometryBasics: decompose_uv, decompose_normals, texturecoordinates, origin, widths,
                       GLTriangleFace, Mat,
@@ -10,7 +11,7 @@ using LinearAlgebra
 using Reexport: @reexport
 @reexport using Makie
 using Makie: is_data_space
-using PythonCall: Py, pynew, pycopy!, pyconvert, pyimport, pytruth, pyeq
+using PythonCall: pynew, pycopy!, pyconvert, pyimport, pytruth, Py, PyArray
 
 const np = pynew()
 const ti = pynew()
