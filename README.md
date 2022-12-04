@@ -22,33 +22,37 @@ save("test.png", fig)
 
 ### Contour plot
 
-![Contour plot](./examples/contour.png)
+[[![Contour plot](./examples/contour.png)](./examples/contour.jl)
 
 ### Heatmap
 
-![Heatmap](examples/heatmap.png)
+[![Heatmap](examples/heatmap.png)](./examples/heatmap.jl)
 
 ### Histogram
 
-![Histogram](examples/hist.png)
+[![Histogram](examples/hist.png)](./examples/hist.jl)
 
 ### Scatter plot
 
-![Scatter](examples/scatter.png)
+[![Scatter](examples/scatter.png)](./examples/scatter.jl)
 
 ### Violin plot
 
-![Violin](examples/violin.png)
+[![Violin](examples/violin.png)](./examples/violin.jl)
 
 ### Layout
 
-![Layout](examples/layout.png)
+[![Layout](examples/layout.png)](./examples/layout.jl)
 
 > This plot contains some bugs.
 
 ## Known Issues
 
+- The notorious time-to-first-plot (TTFP) issue.
+  - To mitigate this, you can use `deps/create_sysimage.jl` to create a sysimage for TaichiMakie. This will significantly reduce the TTFP.
+  - After creating the sysimage, you can use `julia --sysimage=taichi_makie.so` to start Julia with the sysimage.
 - Taichi GGUI does not support the following features:
   - anti-aliasing
   - alpha
-- Support for meshes is still erroneous
+- Texts are not rendered correctly in some cases.
+- Support for meshes is still erroneous.

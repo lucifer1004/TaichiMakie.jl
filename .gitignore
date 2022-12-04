@@ -5,6 +5,7 @@
 /*.py
 /*.ipynb
 /*.png
+/*.so
 /imgui.ini
 /docs/build/
 .CondaPkg

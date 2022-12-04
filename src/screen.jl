@@ -97,7 +97,6 @@ function apply!(screen::Screen, task::GGUITask)
         camctl = task.scene.camera_controls
 
         if camctl isa Camera3D
-            @show camctl.lookat
             camera.lookat(camctl.lookat[]...)
             camera.up(camctl.upvector[]...)
         end
@@ -123,7 +122,6 @@ function Screen(scene::Scene, config::ScreenConfig, ti_window)
 end
 
 function merge_screen_config(::Type{Config}, screen_config_kw) where {Config}
-    @show screen_config_kw
     kw_nt = screen_config_kw
     arguments = map(fieldnames(Config)) do name
         get(kw_nt, name, nothing)
@@ -193,7 +191,7 @@ function Makie.colorbuffer(screen::Screen)
     empty!(screen)
     taichi_draw(screen, screen.scene)
     buf = PyArray(screen.ti_window.window.get_image_buffer_as_numpy())
-    # w, h = size(screen)
-    # [ARGB32(RGBAf(buf[i, j, 1], buf[i, j, 2], buf[i, j, 3], buf[i, j, 4]))
-    #  for i in 1:w, j in 1:h]
+    w, h = size(screen)
+    [ARGB32(RGBAf(buf[i, j, 1], buf[i, j, 2], buf[i, j, 3], buf[i, j, 4]))
+     for i in 1:w, j in 1:h]
 end
