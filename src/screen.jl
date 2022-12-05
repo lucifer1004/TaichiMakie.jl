@@ -183,7 +183,7 @@ function activate!(; inline = LAST_INLINE[], screen_config...)
     Makie.CURRENT_DEFAULT_THEME[:TaichiMakie] = Makie.Attributes()
     Makie.set_screen_config!(TaichiMakie, screen_config)
     Makie.set_active_backend!(TaichiMakie)
-    ti.init(arch = ti.vulkan)
+    ti.init(arch = ti.vulkan, device_memory_fraction = 0.8)
 end
 
 function Makie.colorbuffer(screen::Screen)

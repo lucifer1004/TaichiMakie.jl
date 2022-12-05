@@ -213,19 +213,51 @@ function draw_glyph_collection(screen, scene, position, glyph_collection, rotati
         scale3 = scale isa Number ? Point3f(scale, scale, 0) : to_ndim(Point3f, scale, 0)
         glyphpos = _project_position(scene, markerspace, gp3, id, false)
         glyphdata, metric = getbitmap(glyph)
+
         h, w = size(glyphdata)
+        ϕ = to_2d_rotation(rotation)
+        rotmat = Makie.rotmatrix2d(-ϕ)
+        glyphpos += rotmat * (FreeTypeAbstraction.bearing(metric) .* scale3[1:2] /
+                     DEFAULT_GLYPH_PIXEL_SIZE[])
 
         dw = scale3[1] / DEFAULT_GLYPH_PIXEL_SIZE[]
         dh = scale3[2] / DEFAULT_GLYPH_PIXEL_SIZE[]
         color = rgbatuple(color)
+        vertices = Vec3f[]
+        colors = Vec3f[]
+        indices = Vec3i[]
+
         for i in 1:h, j in 1:w
             if glyphdata[i, j] > 0
                 alpha_ = glyphdata[i, j] / 255 * alpha(color)
                 col = 1 .- (1 .- (red(color), blue(color), green(color))) .* alpha_
-                x = glyphpos[1] + (j - 1) * dw
-                y = glyphpos[2] + (h - i) * dh
-                draw_rectangle(screen, scene, x, y, dw, dh, col)
+                (x0, y0) = glyphpos + (rotmat * Vec2f((j - 1) * dw, (h - i) * dh))
+                (x1, y1) = glyphpos + (rotmat * Vec2f(j * dw, (h - i) * dh))
+                (x2, y2) = glyphpos + (rotmat * Vec2f(j * dw, (h - i + 1) * dh))
+                (x3, y3) = glyphpos + (rotmat * Vec2f((j - 1) * dw, (h - i + 1) * dh))
+
+                m = length(vertices)
+                push!(indices, Vec3i(m, m + 1, m + 2))
+                push!(indices, Vec3i(m, m + 2, m + 3))
+                push!(vertices, translate(screen, Vec3f(x0, y0, 1.0)))
+                push!(vertices, translate(screen, Vec3f(x1, y1, 1.0)))
+                push!(vertices, translate(screen, Vec3f(x2, y2, 1.0)))
+                push!(vertices, translate(screen, Vec3f(x3, y3, 1.0)))
+                append!(colors, fill(to_taichi_color(col), 4))
             end
+        end
+
+        if !isempty(screen.tasks) && screen.tasks[end].type == :triangle
+            task = screen.tasks[end]
+            offset = length(task.vertices)
+            indices = map(indices) do i
+                Vec3i(i[1] + offset, i[2] + offset, i[3] + offset)
+            end
+            append!(task.vertices, vertices)
+            append!(task.colors, colors)
+            append!(task.indices, indices)
+        else
+            push!(screen.tasks, GGUITask(scene, :triangle, vertices, indices, colors))
         end
 
         return

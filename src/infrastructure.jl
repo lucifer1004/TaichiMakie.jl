@@ -59,10 +59,7 @@ function draw_background(screen::Screen, scene::Scene)
 end
 
 function draw_rectangle(screen::Screen, scene::Scene, x0, y0, w0, h0, color)
-    x = screen.translate[1, 1] * x0 + screen.translate[1, 2] * y0 +
-        screen.translate[1, 3]
-    y = screen.translate[2, 1] * x0 + screen.translate[2, 2] * y0 +
-        screen.translate[2, 3]
+    x, y, _ = translate(screen, Vec3f(x0, y0, 1.0))
     width = screen.translate[1, 1] * w0
     height = screen.translate[2, 2] * h0
 
@@ -84,6 +81,8 @@ function draw_rectangle(screen::Screen, scene::Scene, x0, y0, w0, h0, color)
         task = GGUITask(scene, :triangle, vertices, indices, colors)
         push!(screen.tasks, task)
     end
+
+    return vertices
 end
 
 function draw_plot(scene::Scene, screen::Screen, primitive::Combined)
