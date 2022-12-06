@@ -28,8 +28,6 @@ include("utils.jl")
 function __init__()
     pycopy!(np, pyimport("numpy"))
     pycopy!(ti, pyimport("taichi"))
-    DEFAULT_FACE[] = FTFont(joinpath(@__DIR__, "..", "fonts", "cmunrm.ttf"))
-    FreeTypeAbstraction.set_pixelsize(DEFAULT_FACE[], DEFAULT_GLYPH_PIXEL_SIZE[])
     activate!()
 end
 

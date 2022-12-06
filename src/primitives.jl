@@ -212,7 +212,7 @@ function draw_glyph_collection(screen, scene, position, glyph_collection, rotati
 
         scale3 = scale isa Number ? Point3f(scale, scale, 0) : to_ndim(Point3f, scale, 0)
         glyphpos = _project_position(scene, markerspace, gp3, id, false)
-        glyphdata, metric = getbitmap(glyph)
+        glyphdata, metric = getbitmap(font, glyph)
 
         h, w = size(glyphdata)
         ϕ = to_2d_rotation(rotation)
