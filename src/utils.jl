@@ -118,6 +118,11 @@ ColorTypes.green(c::NTuple{4, Float64}) = c[2]
 ColorTypes.blue(c::NTuple{4, Float64}) = c[3]
 ColorTypes.alpha(c::NTuple{4, Float64}) = c[4]
 
+ColorTypes.red(c::AbstractVector) = c[1]
+ColorTypes.green(c::AbstractVector) = c[2]
+ColorTypes.blue(c::AbstractVector) = c[3]
+ColorTypes.alpha(c::AbstractVector) = length(c) >= 4 ? c[4] : 1.0
+
 function to_taichi_color(c)
     r = clamp(red(c), 0, 1)
     g = clamp(green(c), 0, 1)

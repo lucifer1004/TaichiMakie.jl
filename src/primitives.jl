@@ -230,7 +230,7 @@ function draw_glyph_collection(screen, scene, position, glyph_collection, rotati
         for i in 1:h, j in 1:w
             if glyphdata[i, j] > 0
                 alpha_ = glyphdata[i, j] / 255 * alpha(color)
-                col = 1 .- (1 .- (red(color), blue(color), green(color))) .* alpha_
+                col = to_taichi_color(Vec4f(red(color), green(color), blue(color), alpha_))
                 (x0, y0) = glyphpos + (rotmat * Vec2f((j - 1) * dw, (h - i) * dh))
                 (x1, y1) = glyphpos + (rotmat * Vec2f(j * dw, (h - i) * dh))
                 (x2, y2) = glyphpos + (rotmat * Vec2f(j * dw, (h - i + 1) * dh))
