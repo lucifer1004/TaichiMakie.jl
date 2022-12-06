@@ -54,5 +54,4 @@ save("test.png", fig)
 - Taichi GGUI does not support the following features:
   - anti-aliasing
   - alpha
-- Texts are not rendered correctly in some cases.
 - Support for meshes is still erroneous.
